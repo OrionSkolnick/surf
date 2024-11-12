@@ -51,6 +51,12 @@ enum {
 	OnAny   = OnDoc | OnLink | OnImg | OnMedia | OnEdit | OnBar | OnSel,
 };
 
+enum {
+	CustomProxy = WEBKIT_NETWORK_PROXY_MODE_CUSTOM,
+	SystemProxy = WEBKIT_NETWORK_PROXY_MODE_DEFAULT,
+	NoProxy		= WEBKIT_NETWORK_PROXY_MODE_NO_PROXY,
+};
+
 typedef enum {
 	AccessMicrophone,
 	AccessWebcam,
@@ -71,6 +77,9 @@ typedef enum {
 	KioskMode,
 	LoadImages,
 	MediaManualPlay,
+  ProxyIgnoreHosts,
+  ProxyMode,
+  ProxyUrl,
 	PreferredLanguages,
 	RunInFullscreen,
 	ScrollBars,
@@ -83,6 +92,7 @@ typedef enum {
 	Style,
 	WebGL,
 	ZoomLevel,
+	ClipboardNotPrimary,
 	ParameterLast
 } ParamName;
 
@@ -236,6 +246,7 @@ static void togglefullscreen(Client *c, const Arg *a);
 static void togglecookiepolicy(Client *c, const Arg *a);
 static void toggleinspector(Client *c, const Arg *a);
 static void find(Client *c, const Arg *a);
+static void playexternal(Client *c, const Arg *a);
 
 /* Buttons */
 static void clicknavigate(Client *c, const Arg *a, WebKitHitTestResult *h);
@@ -293,6 +304,7 @@ static ParamName loadcommitted[] = {
 	SpellLanguages,
 	Style,
 	ZoomLevel,
+	ClipboardNotPrimary,
 	ParameterLast
 };
 
@@ -1101,6 +1113,7 @@ newview(Client *c, WebKitWebView *rv)
 	WebKitWebContext *context;
 	WebKitCookieManager *cookiemanager;
 	WebKitUserContentManager *contentmanager;
+	WebKitNetworkProxySettings *proxysettings;
 
 	/* Webview */
 	if (rv) {
@@ -1155,6 +1168,28 @@ newview(Client *c, WebKitWebView *rv)
 		    webkit_web_context_get_website_data_manager(context),
 		    curconfig[StrictTLS].val.i ? WEBKIT_TLS_ERRORS_POLICY_FAIL :
 		    WEBKIT_TLS_ERRORS_POLICY_IGNORE);
+		/* proxy */
+		switch (curconfig[ProxyMode].val.i) {
+			case CustomProxy:
+				proxysettings = webkit_network_proxy_settings_new(
+					curconfig[ProxyUrl].val.v,
+					curconfig[ProxyIgnoreHosts].val.v);
+				webkit_web_context_set_network_proxy_settings(context,
+					CustomProxy,
+					proxysettings);
+				break;
+			case NoProxy:
+				webkit_web_context_set_network_proxy_settings(context,
+					NoProxy,
+					NULL);
+				break;
+			case SystemProxy:
+			default:
+				webkit_web_context_set_network_proxy_settings(context,
+					SystemProxy,
+					proxysettings);
+				break;
+		}
 		/* disk cache */
 		webkit_web_context_set_cache_model(context,
 		    curconfig[DiskCache].val.i ? WEBKIT_CACHE_MODEL_WEB_BROWSER :
@@ -1824,13 +1859,18 @@ showcert(Client *c, const Arg *a)
 void
 clipboard(Client *c, const Arg *a)
 {
+	/* User defined choice of selection, see config.h */
+	GdkAtom	selection = GDK_SELECTION_PRIMARY;
+	if (curconfig[ClipboardNotPrimary].val.i > 0)
+		selection = GDK_SELECTION_CLIPBOARD;
+
 	if (a->i) { /* load clipboard uri */
 		gtk_clipboard_request_text(gtk_clipboard_get(
-		                           GDK_SELECTION_PRIMARY),
+                                          selection),
 		                           pasteuri, c);
 	} else { /* copy uri */
 		gtk_clipboard_set_text(gtk_clipboard_get(
-		                       GDK_SELECTION_PRIMARY), c->targeturi
+		                       selection), c->targeturi
 		                       ? c->targeturi : geturi(c), -1);
 	}
 }
@@ -1980,6 +2020,15 @@ clickexternplayer(Client *c, const Arg *a, WebKitHitTestResult *h)
 	Arg arg;
 
 	arg = (Arg)VIDEOPLAY(webkit_hit_test_result_get_media_uri(h));
+	spawn(c, &arg);
+}
+
+void
+playexternal(Client *c, const Arg *a)
+{
+	Arg arg;
+
+	arg = (Arg)VIDEOPLAY(geturi(c));
 	spawn(c, &arg);
 }
 
